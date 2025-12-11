@@ -11,19 +11,50 @@ import { MECHANICS as STATIC_MECHANICS } from '../data/mechanics';
  * Implements Repository Pattern for easy migration to microservices
  */
 class MechanicRepository {
+    private apiMechanics: Mechanic[] = [];
+    private isInitialized = false;
+
+    constructor() {
+        // Initialize by fetching from API
+        this.init();
+    }
+
+    /**
+     * Initialize repository by fetching from API
+     */
+    private async init() {
+        try {
+            const response = await fetch('http://localhost:3001/api/mechanics');
+            const data = await response.json();
+            if (data.success) {
+                this.apiMechanics = data.mechanics;
+                this.isInitialized = true;
+            }
+        } catch (error) {
+            console.error('Failed to fetch mechanics from API:', error);
+        }
+    }
+
+    /**
+     * Refresh mechanics from API
+     */
+    async refresh() {
+        await this.init();
+    }
+
     /**
      * Get all mechanics (static + database)
      */
     findAll(): Mechanic[] {
         const dbMechanics = getAllMechanics();
-        // Merge static mechanics with database mechanics
+        // Merge static mechanics with database mechanics and API mechanics
         const staticMechanicsConverted = STATIC_MECHANICS.map(m => ({
             ...m,
             profileImage: '/workshop.png',
             reviewCount: 0,
             verified: true
         }));
-        return [...staticMechanicsConverted, ...dbMechanics];
+        return [...staticMechanicsConverted, ...dbMechanics, ...this.apiMechanics];
     }
 
     /**

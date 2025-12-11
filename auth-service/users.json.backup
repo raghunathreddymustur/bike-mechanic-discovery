@@ -1,0 +1,20 @@
+{
+  "users": [
+    {
+      "id": "1b47385b-68be-4651-aa36-7d1c1490344c",
+      "identity": "admin@gmail.com",
+      "passwordHash": "$2b$10$XNbRwwS2MeoKWMbmfPR2vurjbL7V5sLrM5ZSPU4NC3CMeJS.Kpv0i",
+      "roles": "[\"ADMIN\"]",
+      "createdAt": "2025-12-11T14:04:37.347Z",
+      "updatedAt": "2025-12-11T14:04:37.347Z"
+    },
+    {
+      "id": "fe699295-eed1-4eeb-815e-94b4b7f0ad9d",
+      "identity": "customer@gmail.com",
+      "passwordHash": "$2b$10$a7jio9z3tJfYRmetJJGtRumwArZa.cctkIlC5IaaavQS6Vvp62bBW",
+      "roles": "[\"customer\"]",
+      "createdAt": "2025-12-11T14:06:59.243Z",
+      "updatedAt": "2025-12-11T14:06:59.243Z"
+    }
+  ]
+}
