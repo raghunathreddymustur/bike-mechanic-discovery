@@ -124,5 +124,5 @@ When adding new documentation:
 
 ---
 
-**Last Updated**: December 12, 2025  
-**Documentation Version**: 1.0
+**Last Updated**: December 13, 2025  
+**Documentation Version**: 1.1 - Added Docker Compose localhost routing fix documentation

@@ -358,4 +358,185 @@ Restart the service! Environment variables are loaded on startup.
 
 ---
 
-**Last Updated**: December 12, 2025
+## Problem 5: Docker Migration - Frontend "Failed to send OTP" Error
+
+### Date
+December 13, 2025
+
+### Symptom
+After Docker Compose migration, frontend consistently showed:
+- **Error**: "Failed to send OTP" when attempting registration
+- Issue persisted despite API working correctly via curl/Invoke-RestMethod
+- OTP successfully generated when tested directly with auth service API
+
+### Long Investigation Process
+
+This was a **complex, multi-layered issue** that took significant troubleshooting:
+
+#### Initial Findings
+1. ✅ Auth service healthy in Docker (`docker ps` showed "healthy" status)
+2. ✅ MongoDB Atlas connected successfully
+3. ✅ API tests via `curl` and `Invoke-RestMethod` worked perfectly
+4. ❌ **Frontend browser requests failed consistently**
+
+### Root Causes Discovered
+
+#### Issue 1: DNS Resolution Problem
+**Problem**: `api.localhost` subdomain doesn't resolve on Windows host machines without hosts file modification.
+
+**Attempted Fix**: Configured Traefik routing rules:
+```yaml
+# Frontend
+- "traefik.http.routers.frontend.rule=Host(`app.localhost`) || Host(`localhost`)"
+
+# Auth Service  
+- "traefik.http.routers.auth.rule=Host(`api.localhost`) || (Host(`localhost`) && PathPrefix(`/auth`))"
+```
+
+**Result**: Partial success - curl worked, browser still failed.
+
+#### Issue 2: Traefik Routing Priority Conflict
+**Problem**: Both frontend and auth service matched `Host(localhost)`, causing Traefik to route ALL requests to frontend.
+
+**Solution**: Added explicit priorities:
+```yaml
+# Frontend - Lower priority
+- "traefik.http.routers.frontend.priority=10"
+
+# Auth - Higher priority for /auth paths
+- "traefik.http.routers.auth.priority=20"
+```
+
+**Result**: Still didn't fully resolve the issue.
+
+#### Issue 3: Vite Build-Time Environment Variables
+**Problem**: Environment variable `VITE_AUTH_SERVICE_URL=/auth` was set in `docker-compose.yml` as runtime variable, but Vite needs it at **build time**.
+
+**Initial Attempts**:
+1. ❌ Set in `docker-compose.yml` environment section - didn't work (runtime only)
+2. ❌ Added `ARG` in Dockerfile - still failed
+3. ❌ Added build args in docker-compose - **JavaScript still contained `localhost:3001`**
+
+**Verification**: Checked built JavaScript:
+```bash
+docker-compose exec frontend grep -o 'localhost:3001' /app/dist/assets/*.js
+# Result: Found localhost:3001 in bundle!
+```
+
+**Discovery**: Despite all configuration attempts, Vite wasn't substituting the environment variable during build.
+
+#### Issue 4: The Actual Root Cause
+**The Real Problem**: The source code had a fallback URL that was **always being used**:
+
+```typescript
+// src/services/authService.ts (BEFORE FIX)
+const AUTH_SERVICE_URL = import.meta.env.VITE_AUTH_SERVICE_URL || 'http://localhost:3001';
+```
+
+Even though we set environment variables, Vite's build process wasn't properly injecting them, so the fallback `'http://localhost:3001'` was always used.
+
+### Final Solution
+
+**Changed the source code default** to use the relative path:
+
+**File**: `src/services/authService.ts`
+```diff
+- const AUTH_SERVICE_URL = import.meta.env.VITE_AUTH_SERVICE_URL || 'http://localhost:3001';
++ const AUTH_SERVICE_URL = import.meta.env.VITE_AUTH_SERVICE_URL || '/auth';
+```
+
+**Why This Works**:
+- Browser sees `/auth/api/auth/send-otp`
+- Resolves to `http://localhost/auth/api/auth/send-otp`
+- Traefik matches `PathPrefix(/auth)` rule (Priority 20)
+- Routes to auth-service container
+- Middleware strips `/auth` prefix
+- Auth service receives `/api/auth/send-otp` ✅
+
+### Complete Docker Configuration
+
+**docker-compose.yml** (final working version):
+```yaml
+frontend:
+  build:
+    context: ../../
+    dockerfile: migrations/phase1-docker-compose/dockerfiles/Dockerfile.frontend
+  labels:
+    - "traefik.http.routers.frontend.rule=Host(`app.localhost`) || (Host(`localhost`) && PathPrefix(`/`))"
+    - "traefik.http.routers.frontend.priority=10"
+
+auth-service:
+  labels:
+    - "traefik.http.routers.auth.rule=Host(`api.localhost`) || (Host(`localhost`) && PathPrefix(`/auth`))"
+    - "traefik.http.routers.auth.priority=20"
+    - "traefik.http.middlewares.auth-stripprefix.stripprefix.prefixes=/auth"
+    - "traefik.http.routers.auth.middlewares=auth-stripprefix"
+```
+
+### Verification Steps
+
+1. **Rebuild Frontend**:
+```bash
+cd migrations/phase1-docker-compose
+docker-compose down
+docker image rm phase1-docker-compose-frontend -f
+docker-compose build --no-cache frontend
+docker-compose up -d
+```
+
+2. **Verify JavaScript Bundle**:
+```bash
+docker-compose exec frontend grep -o 'localhost:3001' /app/dist/assets/*.js
+# Should return: (empty - not found!)
+```
+
+3. **Test from Browser**:
+- Navigate to http://localhost/register
+- Enter email and password
+- Click "Send OTP"
+- **Result**: ✅ Success! OTP input screen appears
+
+4. **Verify in Logs**:
+```bash
+docker-compose logs auth-service --tail 20
+# Should show: "OTP created for <email>: <code>"
+```
+
+### Production Testing
+
+**Live User Test** (mrrmmmr321@gmail.com):
+```
+Logs showed:
+bike-mechanic-auth | 🟢 OTP created for mrrmmmr321@gmail.com: 640924
+```
+
+✅ **Complete success** - user able to register via browser!
+
+### Key Learnings
+
+1. **Vite Environment Variables**: Build-time variables must be available during `npm run build`, not just in docker-compose environment
+2. **Source Code Defaults Matter**: If build-time injection fails, the fallback in source code will be used
+3. **Docker DNS**: `*.localhost` subdomains work in browser but may not resolve on host machine
+4. **Traefik Priorities**: Must explicitly set when multiple routes could match the same request
+5. **Debugging Strategy**: Test at every layer:
+   - ✅ Container health
+   - ✅ Direct API calls (curl)
+   - ✅ Built JavaScript inspection
+   - ✅ Browser DevTools Network tab
+
+### Prevention for Future
+
+1. **Use relative paths by default** in source code for Docker deployments
+2. **Document environment variable build requirements** clearly
+3. **Add verification step** to check built JavaScript after Docker build
+4. **Test from actual browser**, not just curl/API tools
+
+### Related Files Modified
+
+- `src/services/authService.ts` - Changed default URL to `/auth`
+- `migrations/phase1-docker-compose/docker-compose.yml` - Added routing priorities
+- `migrations/phase1-docker-compose/dockerfiles/Dockerfile.frontend` - Added ARG (though not ultimately used)
+
+---
+
+**Last Updated**: December 13, 2025

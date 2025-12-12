@@ -581,4 +581,4 @@ bike-mechanic-discovery/
 
 ---
 
-**Last Updated**: December 12, 2025 - Added Docker Compose support
+**Last Updated**: December 13, 2025 - **Added localhost routing fix** (see troubleshooting/problemsfaced.md Problem 5)
