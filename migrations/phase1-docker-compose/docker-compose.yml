@@ -1,0 +1,114 @@
+version: '3.8'
+
+services:
+  # Traefik API Gateway
+  traefik:
+    image: traefik:v3.0
+    container_name: bike-mechanic-traefik
+    command:
+      # Enable Docker provider
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+
+      # HTTP entrypoint
+      - "--entrypoints.web.address=:80"
+
+      # Enable dashboard (accessible on port 8080)
+      - "--api.dashboard=true"
+      - "--api.insecure=true"
+
+      # Logging
+      - "--log.level=INFO"
+      - "--accesslog=true"
+    ports:
+      - "80:80" # HTTP
+      - "8080:8080" # Traefik Dashboard
+    volumes:
+      # Mount Docker socket so Traefik can discover services
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - bike-mechanic-network
+    restart: unless-stopped
+
+  # Frontend Service (React/Vite)
+  frontend:
+    build:
+      context: ../../ # Project root
+      dockerfile: migrations/phase1-docker-compose/dockerfiles/Dockerfile.frontend
+      args:
+        VITE_AUTH_SERVICE_URL: /auth
+    container_name: bike-mechanic-frontend
+    labels:
+      # Enable Traefik for this service
+      - "traefik.enable=true"
+
+      # Router configuration - Support app.localhost AND localhost
+      # Use PathPrefix(/) for frontend to allow specificity comparison
+      - "traefik.http.routers.frontend.rule=Host(`app.localhost`) || (Host(`localhost`) && PathPrefix(`/`))"
+      - "traefik.http.routers.frontend.entrypoints=web"
+      - "traefik.http.routers.frontend.priority=10"
+
+      # Service configuration
+      - "traefik.http.services.frontend.loadbalancer.server.port=3000"
+    networks:
+      - bike-mechanic-network
+    depends_on:
+      - auth-service
+    restart: unless-stopped
+
+  # Auth Service (Express/TypeScript)
+  auth-service:
+    build:
+      context: ../../auth-service # Auth service directory
+      dockerfile: ../migrations/phase1-docker-compose/dockerfiles/Dockerfile.auth-service
+    container_name: bike-mechanic-auth
+    environment:
+      # Port (internal to Docker)
+      - PORT=3001
+
+      # MongoDB connection
+      - MONGO_URI=${MONGO_URI}
+
+      # JWT configuration
+      - JWT_SECRET=${JWT_SECRET:-bike-mechanic-super-secret-key-change-in-production}
+      - JWT_EXPIRY=24h
+
+      # CORS - Allow localhost and Docker domains
+      - CORS_ORIGIN=http://app.localhost,http://localhost,http://localhost:5173
+
+      # Environment
+      - NODE_ENV=development
+
+      # OTP configuration
+      - OTP_EXPIRY=300
+      - EMAIL_ENABLED=false
+      - SMS_ENABLED=false
+    labels:
+      # Enable Traefik for this service
+      - "traefik.enable=true"
+
+      # Router configuration - Support api.localhost AND localhost/auth path
+      - "traefik.http.routers.auth.rule=Host(`api.localhost`) || (Host(`localhost`) && PathPrefix(`/auth`))"
+      - "traefik.http.routers.auth.entrypoints=web"
+      - "traefik.http.routers.auth.priority=20" # Higher priority to capture /auth before generic localhost
+
+      # Service configuration
+      - "traefik.http.services.auth.loadbalancer.server.port=3001"
+
+      # Middleware - strip /auth prefix when forwarding to service
+      - "traefik.http.middlewares.auth-stripprefix.stripprefix.prefixes=/auth"
+      - "traefik.http.routers.auth.middlewares=auth-stripprefix"
+    networks:
+      - bike-mechanic-network
+    healthcheck:
+      test: [ "CMD", "node", "-e", "require('http').get('http://localhost:3001/api/auth/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1); })" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+networks:
+  bike-mechanic-network:
+    driver: bridge
+    name: bike-mechanic-network

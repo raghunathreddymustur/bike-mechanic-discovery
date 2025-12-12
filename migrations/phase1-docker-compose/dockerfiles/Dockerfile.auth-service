@@ -1,0 +1,52 @@
+# Auth Service Dockerfile
+# TypeScript to JavaScript compilation with production runtime
+
+# Stage 1: Build
+FROM node:18-alpine AS builder
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install all dependencies (including devDependencies for TypeScript)
+RUN npm ci
+
+# Copy source code
+COPY . .
+
+# Compile TypeScript to JavaScript
+RUN npx tsc
+
+# Stage 2: Production
+FROM node:18-alpine AS production
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install only production dependencies
+RUN npm ci --only=production
+
+# Install tsx globally for running TypeScript
+RUN npm install -g tsx
+
+# Copy compiled JavaScript from builder
+COPY --from=builder /app/dist ./dist
+
+# Copy source TypeScript files (needed for tsx)
+COPY src ./src
+
+# Copy other necessary files
+COPY tsconfig.json ./
+
+# Expose port (internal to Docker network)
+EXPOSE 3001
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s \
+  CMD node -e "require('http').get('http://localhost:3001/api/auth/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1); })"
+
+# Run with tsx for TypeScript support
+CMD ["tsx", "src/server.ts"]

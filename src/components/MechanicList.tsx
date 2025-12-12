@@ -198,8 +198,12 @@ export const MechanicList = () => {
                             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                 {mechanic.area}
                             </span>
-                            <span style={{ color: '#cbd5e1' }}>•</span>
-                            <span style={{ fontWeight: '600', color: '#3b82f6' }}>{mechanic.distance.toFixed(1)} km</span>
+                            {mechanic.distance !== undefined && (
+                                <>
+                                    <span style={{ color: '#cbd5e1' }}>•</span>
+                                    <span style={{ fontWeight: '600', color: '#3b82f6' }}>{mechanic.distance.toFixed(1)} km</span>
+                                </>
+                            )}
                         </div>
 
                         <div style={{ display: 'flex', gap: '8px' }}>

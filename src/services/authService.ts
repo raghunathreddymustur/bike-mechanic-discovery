@@ -1,4 +1,4 @@
-const AUTH_SERVICE_URL = import.meta.env.VITE_AUTH_SERVICE_URL || 'http://localhost:3001';
+const AUTH_SERVICE_URL = import.meta.env.VITE_AUTH_SERVICE_URL || '/auth';
 const TOKEN_KEY = 'auth_token';
 
 interface LoginResponse {

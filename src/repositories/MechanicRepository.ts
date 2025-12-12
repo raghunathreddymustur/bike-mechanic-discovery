@@ -12,7 +12,6 @@ import { MECHANICS as STATIC_MECHANICS } from '../data/mechanics';
  */
 class MechanicRepository {
     private apiMechanics: Mechanic[] = [];
-    private isInitialized = false;
 
     constructor() {
         // Initialize by fetching from API
@@ -28,7 +27,6 @@ class MechanicRepository {
             const data = await response.json();
             if (data.success) {
                 this.apiMechanics = data.mechanics;
-                this.isInitialized = true;
             }
         } catch (error) {
             console.error('Failed to fetch mechanics from API:', error);

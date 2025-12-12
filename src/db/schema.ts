@@ -62,6 +62,7 @@ export interface Mechanic {
         open: string;
         close: string;
     };
+    distance?: number; // Calculated distance from reference point (in km)
 }
 
 // Form data for registration
